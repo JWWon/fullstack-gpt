@@ -3,5 +3,7 @@ env/
 
 # Environment variables
 .env
+.streamlit/secrets.toml
 
+# Cache
 .cache/
