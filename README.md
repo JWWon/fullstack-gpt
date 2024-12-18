@@ -1,3 +1,9 @@
+# Fullstack GPT
+
+This contains simple apps built with Streamlit and Langchain.
+
+You can play around with the streamlit app [here](https://fullstack-gpt-jvcuvs4iftgbkbwbs5yv7q.streamlit.app/).
+
 # Prerequisites
 
 * (optional) Install `pyenv` for Python version management
