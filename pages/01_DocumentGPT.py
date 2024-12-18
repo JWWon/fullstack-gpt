@@ -50,6 +50,9 @@ prompt = ChatPromptTemplate.from_messages(
 )
 
 
+embeddings = OpenAIEmbeddings()
+
+
 @st.cache_data(show_spinner="Embedding file...")
 def embed_file(up: UploadedFile):
     file_content = up.read()
@@ -63,7 +66,6 @@ def embed_file(up: UploadedFile):
     loader = UnstructuredFileLoader(file_path)
     docs = loader.load_and_split(text_splitter=splitter)
 
-    embeddings = OpenAIEmbeddings()
     cache = LocalFileStore(f"./.cache/embeddings/{up.name}")
     cached_embeddings = CacheBackedEmbeddings.from_bytes_store(embeddings, cache)
 
@@ -125,6 +127,7 @@ with st.sidebar:
         "OpenAI API Key", st.secrets.OPENAI_API_KEY, type="password"
     )
     llm.openai_api_key = openai_api_key
+    embeddings.openai_api_key = openai_api_key
 
     file = st.file_uploader(
         "Upload a .txt .pdf or .docx file", type=["txt", "pdf", "docx"]
