@@ -1,4 +1,5 @@
 from operator import itemgetter
+import os
 from typing import Any, List, Literal
 import streamlit as st
 from streamlit.runtime.uploaded_file_manager import UploadedFile
@@ -60,6 +61,7 @@ embeddings = OllamaEmbeddings(model="mistral")
 def embed_file(up: UploadedFile):
     file_content = up.read()
     file_path = f"./.cache/private_files/{up.name}"
+    os.makedirs(os.path.dirname(file_path), exist_ok=True)
     with open(file_path, "wb") as f:
         f.write(file_content)
 
@@ -69,7 +71,9 @@ def embed_file(up: UploadedFile):
     loader = UnstructuredFileLoader(file_path)
     docs = loader.load_and_split(text_splitter=splitter)
 
-    cache = LocalFileStore(f"./.cache/private_embeddings/{up.name}")
+    embedding_path = f"./.cache/private_embeddings/{up.name}"
+    os.makedirs(os.path.dirname(embedding_path), exist_ok=True)
+    cache = LocalFileStore(embedding_path)
     cached_embeddings = CacheBackedEmbeddings.from_bytes_store(embeddings, cache)
 
     vectorstore = FAISS.from_documents(docs, cached_embeddings)

@@ -1,4 +1,5 @@
 from operator import itemgetter
+import os
 from typing import Any, List, Literal
 import streamlit as st
 from streamlit.runtime.uploaded_file_manager import UploadedFile
@@ -51,29 +52,6 @@ prompt = ChatPromptTemplate.from_messages(
 )
 
 
-embeddings = OpenAIEmbeddings()
-
-
-@st.cache_resource(show_spinner="Embedding file...")
-def embed_file(up: UploadedFile):
-    file_content = up.read()
-    file_path = f"./.cache/files/{up.name}"
-    with open(file_path, "wb") as f:
-        f.write(file_content)
-
-    splitter = CharacterTextSplitter.from_tiktoken_encoder(
-        separator="\n", chunk_size=600, chunk_overlap=100
-    )
-    loader = UnstructuredFileLoader(file_path)
-    docs = loader.load_and_split(text_splitter=splitter)
-
-    cache = LocalFileStore(f"./.cache/embeddings/{up.name}")
-    cached_embeddings = CacheBackedEmbeddings.from_bytes_store(embeddings, cache)
-
-    vectorstore = FAISS.from_documents(docs, cached_embeddings)
-    return vectorstore.as_retriever()
-
-
 def save_message(message: str, role: Literal["user", "assistant", "ai", "human"]):
     st.session_state.messages.append({"role": role, "message": message})
 
@@ -121,44 +99,73 @@ class ChatCallbackHandler(BaseCallbackHandler):
         self.message_box.markdown(self.message)
 
 
-llm = ChatOpenAI(temperature=0, streaming=True, callbacks=[ChatCallbackHandler()])
-
 with st.sidebar:
     openai_api_key = st.text_input(
-        "OpenAI API Key", st.secrets.OPENAI_API_KEY, type="password"
+        "OpenAI API Key",
+        st.secrets.OPENAI_API_KEY if "OPENAI_API_KEY" in st.secrets else "",
+        type="password",
     )
-    llm.openai_api_key = openai_api_key
-    embeddings.openai_api_key = openai_api_key
 
     file = st.file_uploader(
         "Upload a .txt .pdf or .docx file", type=["txt", "pdf", "docx"]
     )
 
-if file and openai_api_key:
-    retriever = embed_file(file)
+if openai_api_key:
+    embeddings = OpenAIEmbeddings(api_key=openai_api_key)
+    llm = ChatOpenAI(
+        api_key=openai_api_key,
+        temperature=0,
+        streaming=True,
+        callbacks=[ChatCallbackHandler()],
+    )
 
-    send_message("I'm ready to answer your questions!", "ai", save=False)
-    print_history()
-    load_memory()
+    @st.cache_resource(show_spinner="Embedding file...")
+    def embed_file(up: UploadedFile):
+        file_content = up.read()
+        file_path = f"./.cache/files/{up.name}"
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
+        with open(file_path, "wb") as f:
+            f.write(file_content)
 
-    message = st.chat_input("Ask a question")
-    if message:
-        send_message(message, "human")
-
-        chain = (
-            {
-                "context": retriever | RunnableLambda(format_docs),
-                "question": RunnablePassthrough(),
-            }
-            | RunnablePassthrough.assign(
-                history=RunnableLambda(memory.load_memory_variables)
-                | itemgetter("history")
-            )
-            | prompt
-            | llm
+        splitter = CharacterTextSplitter.from_tiktoken_encoder(
+            separator="\n", chunk_size=600, chunk_overlap=100
         )
+        loader = UnstructuredFileLoader(file_path)
+        docs = loader.load_and_split(text_splitter=splitter)
 
-        with st.chat_message("ai"):
-            chain.invoke(message)
-else:
-    st.session_state.messages = []
+        embedding_path = f"./.cache/embeddings/{up.name}"
+        os.makedirs(os.path.dirname(embedding_path), exist_ok=True)
+        cache = LocalFileStore(embedding_path)
+        cached_embeddings = CacheBackedEmbeddings.from_bytes_store(embeddings, cache)
+
+        vectorstore = FAISS.from_documents(docs, cached_embeddings)
+        return vectorstore.as_retriever()
+
+    if file:
+        retriever = embed_file(file)
+
+        send_message("I'm ready to answer your questions!", "ai", save=False)
+        print_history()
+        load_memory()
+
+        message = st.chat_input("Ask a question")
+        if message:
+            send_message(message, "human")
+
+            chain = (
+                {
+                    "context": retriever | RunnableLambda(format_docs),
+                    "question": RunnablePassthrough(),
+                }
+                | RunnablePassthrough.assign(
+                    history=RunnableLambda(memory.load_memory_variables)
+                    | itemgetter("history")
+                )
+                | prompt
+                | llm
+            )
+
+            with st.chat_message("ai"):
+                chain.invoke(message)
+    else:
+        st.session_state.messages = []
