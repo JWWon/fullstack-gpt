@@ -5,19 +5,21 @@ from streamlit.runtime.uploaded_file_manager import UploadedFile
 from langchain.storage import LocalFileStore
 from langchain.text_splitter import CharacterTextSplitter
 from langchain.document_loaders import UnstructuredFileLoader
-from langchain.embeddings import CacheBackedEmbeddings
+from langchain.embeddings import (
+    CacheBackedEmbeddings,
+    OllamaEmbeddings,
+)
 from langchain.vectorstores.faiss import FAISS
 from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder
-from langchain_openai.chat_models import ChatOpenAI
-from langchain_openai.embeddings import OpenAIEmbeddings
+from langchain_ollama.chat_models import ChatOllama
 from langchain.schema.runnable import RunnableLambda, RunnablePassthrough
 from langchain.schema import Document
 from langchain.callbacks.base import BaseCallbackHandler
 from langchain.memory import ConversationBufferMemory
 
-st.set_page_config(page_title="Document GPT", page_icon="📜")
+st.set_page_config(page_title="Private GPT", page_icon="🔒")
 
-st.title("Document GPT")
+st.title("Private GPT")
 
 st.markdown(
     """
@@ -51,13 +53,13 @@ prompt = ChatPromptTemplate.from_messages(
 )
 
 
-embeddings = OpenAIEmbeddings()
+embeddings = OllamaEmbeddings(model="mistral")
 
 
 @st.cache_resource(show_spinner="Embedding file...")
 def embed_file(up: UploadedFile):
     file_content = up.read()
-    file_path = f"./.cache/files/{up.name}"
+    file_path = f"./.cache/private_files/{up.name}"
     with open(file_path, "wb") as f:
         f.write(file_content)
 
@@ -67,7 +69,7 @@ def embed_file(up: UploadedFile):
     loader = UnstructuredFileLoader(file_path)
     docs = loader.load_and_split(text_splitter=splitter)
 
-    cache = LocalFileStore(f"./.cache/embeddings/{up.name}")
+    cache = LocalFileStore(f"./.cache/private_embeddings/{up.name}")
     cached_embeddings = CacheBackedEmbeddings.from_bytes_store(embeddings, cache)
 
     vectorstore = FAISS.from_documents(docs, cached_embeddings)
@@ -121,20 +123,16 @@ class ChatCallbackHandler(BaseCallbackHandler):
         self.message_box.markdown(self.message)
 
 
-llm = ChatOpenAI(temperature=0, streaming=True, callbacks=[ChatCallbackHandler()])
+llm = ChatOllama(
+    model="mistral", temperature=0, streaming=True, callbacks=[ChatCallbackHandler()]
+)
 
 with st.sidebar:
-    openai_api_key = st.text_input(
-        "OpenAI API Key", st.secrets.OPENAI_API_KEY, type="password"
-    )
-    llm.openai_api_key = openai_api_key
-    embeddings.openai_api_key = openai_api_key
-
     file = st.file_uploader(
         "Upload a .txt .pdf or .docx file", type=["txt", "pdf", "docx"]
     )
 
-if file and openai_api_key:
+if file:
     retriever = embed_file(file)
 
     send_message("I'm ready to answer your questions!", "ai", save=False)
